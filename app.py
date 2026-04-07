@@ -61,9 +61,7 @@ def get_cal_service():
 histories: dict[str, list] = {}
 
 # ── Claude システムプロンプト ─────────────────
-SYSTEM = f"""あなたは増山純さんの個人秘書「ジュン秘書」です。LINEで毎日サポートします。
-
-今日の日付: {date.today().isoformat()}（日本時間）
+SYSTEM = """あなたは増山純さんの個人秘書「ジュン秘書」です。LINEで毎日サポートします。
 
 対応範囲：
 ① 仕事・プライベートのタスク管理（追加・一覧・完了）
@@ -317,10 +315,11 @@ def chat(user_id: str, text: str) -> str:
     if len(histories[user_id]) > 20:
         histories[user_id] = histories[user_id][-20:]
 
+    system_with_date = f"今日の日付: {date.today().isoformat()}（日本時間）\n\n" + SYSTEM
     response = claude.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        system=SYSTEM,
+        system=system_with_date,
         messages=histories[user_id],
     )
 
