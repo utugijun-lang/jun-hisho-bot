@@ -3,3 +3,4 @@ line-bot-sdk
 anthropic
 notion-client==2.2.1
 gunicorn
+google-api-python-client
