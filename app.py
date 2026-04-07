@@ -33,7 +33,7 @@ claude          = anthropic.Anthropic(api_key=CLAUDE_KEY)
 notion          = NotionClient(auth=NOTION_KEY) if NOTION_KEY else None
 
 # Google カレンダー
-GCAL_PENDING_DB_ID = "389ad1e1-7f56-4aeb-a86a-ce10dc47ff55"
+GCAL_PENDING_DB_ID = "12322bf9-11f6-471f-8086-b896b691680a"
 JST                = timezone(timedelta(hours=9))
 # ── 会話履歴（ユーザーごと、最大20ターン） ────
 histories: dict[str, list] = {}
