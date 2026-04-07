@@ -33,30 +33,8 @@ claude          = anthropic.Anthropic(api_key=CLAUDE_KEY)
 notion          = NotionClient(auth=NOTION_KEY) if NOTION_KEY else None
 
 # Google カレンダー
-GCAL_ID       = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
-GCAL_JSON     = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-JST           = timezone(timedelta(hours=9))
-_gcal_service = None
-
-def get_cal_service():
-    global _gcal_service
-    if _gcal_service:
-        return _gcal_service
-    if not GCAL_JSON:
-        return None
-    try:
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(GCAL_JSON),
-            scopes=["https://www.googleapis.com/auth/calendar"]
-        )
-        _gcal_service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-        return _gcal_service
-    except Exception as e:
-        print(f"[GCal] auth error: {e}")
-        return None
-
+GCAL_PENDING_DB_ID = "389ad1e1-7f56-4aeb-a86a-ce10dc47ff55"
+JST                = timezone(timedelta(hours=9))
 # ── 会話履歴（ユーザーごと、最大20ターン） ────
 histories: dict[str, list] = {}
 
@@ -226,58 +204,47 @@ def complete_task(title: str) -> bool:
 # ── Google カレンダー操作 ─────────────────────
 
 def add_event(title: str, start: str, end: str | None = None, description: str = "") -> bool:
-    service = get_cal_service()
-    if not service:
-        print("[GCal] service not available")
+    if not notion:
         return False
     try:
-        start_dt = datetime.fromisoformat(start)
-        end_dt   = datetime.fromisoformat(end) if end else start_dt + timedelta(hours=1)
-        event = {
-            "summary":     title,
-            "description": description,
-            "start": {"dateTime": start_dt.isoformat(), "timeZone": "Asia/Tokyo"},
-            "end":   {"dateTime": end_dt.isoformat(),   "timeZone": "Asia/Tokyo"},
-        }
-        service.events().insert(calendarId=GCAL_ID, body=event).execute()
-        print(f"[GCal] event added: {title}")
+        notion.pages.create(
+            parent={"database_id": GCAL_PENDING_DB_ID},
+            properties={
+                "タイトル": {"title": [{"text": {"content": title}}]},
+                "開始日時": {"rich_text": [{"text": {"content": start}}]},
+                "終了日時": {"rich_text": [{"text": {"content": end or ""}}]},
+                "説明":     {"rich_text": [{"text": {"content": description}}]},
+                "ステータス": {"select": {"name": "待機中"}},
+                "作成日":   {"date": {"start": date.today().isoformat()}},
+            }
+        )
+        print(f"[GCal] event queued in Notion: {title}")
         return True
     except Exception as e:
-        print(f"[GCal] add_event error: {e}")
+        print(f"[GCal] add_event Notion error: {e}")
         return False
 
 
 def list_cal_events(days: int = 7) -> list[str]:
-    service = get_cal_service()
-    if not service:
+    if not notion:
         return []
     try:
-        now      = datetime.now(timezone.utc).isoformat()
-        end_time = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
-        result   = service.events().list(
-            calendarId=GCAL_ID,
-            timeMin=now,
-            timeMax=end_time,
-            maxResults=10,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
-        events = result.get("items", [])
-        formatted = []
-        for ev in events:
-            start_raw = ev["start"].get("dateTime", ev["start"].get("date", ""))
-            ev_title  = ev.get("summary", "（タイトルなし）")
-            if "T" in start_raw:
-                dt = datetime.fromisoformat(start_raw).astimezone(JST)
-                time_str = dt.strftime("%m/%d %H:%M")
-            else:
-                time_str = start_raw
-            formatted.append(f"{time_str} {ev_title}")
-        return formatted
+        res = notion.databases.query(
+            database_id=GCAL_PENDING_DB_ID,
+            filter={"property": "ステータス", "select": {"equals": "待機中"}},
+            page_size=10,
+        )
+        result = []
+        for page in res["results"]:
+            t = page["properties"]["タイトル"]["title"]
+            s = page["properties"]["開始日時"]["rich_text"]
+            title = t[0]["text"]["content"] if t else "？"
+            start = s[0]["text"]["content"] if s else ""
+            result.append(f"{start[:16]} {title}")
+        return result
     except Exception as e:
-        print(f"[GCal] list_events error: {e}")
+        print(f"[GCal] list_events Notion error: {e}")
         return []
-
 
 def execute_action(action: dict):
     act = action.get("action", "none")
